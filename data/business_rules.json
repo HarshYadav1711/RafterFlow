@@ -1,0 +1,215 @@
+{
+  "source": "Ideaboat Solutions LLP — Technical Assessment: AI Lead Intake Agent, Appendices B–E",
+  "business": {
+    "name": "Summit Roofing Co.",
+    "summary": "Residential roofing, Brisbane QLD (fictional business for this assessment)"
+  },
+  "service_area": [
+    {"postcode": "4000", "suburb": "Brisbane City"},
+    {"postcode": "4005", "suburb": "New Farm"},
+    {"postcode": "4006", "suburb": "Fortitude Valley"},
+    {"postcode": "4010", "suburb": "Albion"},
+    {"postcode": "4011", "suburb": "Clayfield"},
+    {"postcode": "4030", "suburb": "Lutwyche"},
+    {"postcode": "4051", "suburb": "Alderley"},
+    {"postcode": "4059", "suburb": "Red Hill"},
+    {"postcode": "4064", "suburb": "Paddington"},
+    {"postcode": "4066", "suburb": "Toowong"},
+    {"postcode": "4101", "suburb": "West End"},
+    {"postcode": "4102", "suburb": "Woolloongabba"},
+    {"postcode": "4151", "suburb": "Coorparoo"},
+    {"postcode": "4152", "suburb": "Camp Hill"},
+    {"postcode": "4169", "suburb": "Kangaroo Point"}
+  ],
+  "pricing": {
+    "currency": "AUD",
+    "includes_gst": true,
+    "estimate_wording": {
+      "present_as_range": true,
+      "must_state_estimate_not_quote": true,
+      "final_quote_after_free_inspection": true,
+      "display_example": "$8,100 to $10,800 (incl. GST)"
+    },
+    "rates": [
+      {
+        "service_type": "roof_restoration",
+        "roof_material": "tile",
+        "unit": "per_m2",
+        "low_rate": 45,
+        "high_rate": 60,
+        "quantity_field": "size_m2"
+      },
+      {
+        "service_type": "roof_restoration",
+        "roof_material": "metal",
+        "unit": "per_m2",
+        "low_rate": 35,
+        "high_rate": 50,
+        "quantity_field": "size_m2"
+      },
+      {
+        "service_type": "roof_replacement",
+        "roof_material": null,
+        "notes": "to Colorbond metal, any existing roof",
+        "unit": "per_m2",
+        "low_rate": 95,
+        "high_rate": 125,
+        "quantity_field": "size_m2"
+      },
+      {
+        "service_type": "gutter_replacement",
+        "roof_material": null,
+        "unit": "per_lineal_metre",
+        "low_rate": 55,
+        "high_rate": 75,
+        "quantity_field": "gutter_length_m"
+      },
+      {
+        "service_type": "leak_repair",
+        "roof_material": null,
+        "unit": "per_callout_fixed",
+        "low_rate": 250,
+        "high_rate": 650,
+        "quantity_field": null
+      },
+      {
+        "service_type": "inspection_only",
+        "roof_material": null,
+        "unit": "free",
+        "low_rate": 0,
+        "high_rate": 0,
+        "quantity_field": null
+      }
+    ],
+    "multipliers": {
+      "applies_to_service_types": [
+        "roof_restoration",
+        "roof_replacement",
+        "gutter_replacement"
+      ],
+      "two_or_more_storeys": 1.15,
+      "steep_pitch": 1.10,
+      "combined_when_both_apply": 1.265
+    },
+    "defaults_when_unknown": {
+      "storeys": 1,
+      "steep_pitch": false,
+      "must_state_assumption_in_reply": true
+    },
+    "rounding": {
+      "nearest_aud": 50,
+      "half_rounds": "up"
+    },
+    "minimum_job_charge": {
+      "amount_aud": 1500,
+      "applies_to_service_types": [
+        "roof_restoration",
+        "roof_replacement",
+        "gutter_replacement"
+      ],
+      "both_ends_at_minimum_display": "$1,500 (minimum job charge)"
+    },
+    "roof_restoration_requires_roof_material": true,
+    "calculation_order": [
+      "base_low_high_from_quantity_times_rates",
+      "apply_multipliers_where_eligible",
+      "apply_defaults_when_storeys_or_steep_pitch_unknown",
+      "round_each_end_nearest_50_half_up",
+      "enforce_minimum_job_charge_per_end"
+    ],
+    "worked_example": {
+      "service_type": "roof_replacement",
+      "size_m2": 150,
+      "storeys": 2,
+      "steep_pitch": true,
+      "low_raw": 18026.25,
+      "high_raw": 23718.75,
+      "low_rounded": 18050,
+      "high_rounded": 23700,
+      "display": "$18,050 to $23,700 (incl. GST)"
+    }
+  },
+  "availability": {
+    "week_of": "2026-10-12",
+    "timezone": "Australia/Brisbane",
+    "slot_id_format": "YYYY-MM-DDTHH:MM",
+    "inspection_duration": "about one hour",
+    "only_listed_slots_exist": true,
+    "no_slots_on_sundays": true,
+    "slots": {
+      "2026-10-12": {
+        "07:00": "booked",
+        "09:00": "booked",
+        "11:00": "free",
+        "13:00": "free"
+      },
+      "2026-10-13": {
+        "07:00": "free",
+        "09:00": "booked",
+        "11:00": "free",
+        "13:00": "booked"
+      },
+      "2026-10-14": {
+        "07:00": "free",
+        "09:00": "free",
+        "11:00": "booked",
+        "13:00": "free"
+      },
+      "2026-10-15": {
+        "07:00": "booked",
+        "09:00": "booked",
+        "11:00": "booked",
+        "13:00": "booked"
+      },
+      "2026-10-16": {
+        "07:00": "free",
+        "09:00": "free",
+        "11:00": "free",
+        "13:00": "free"
+      },
+      "2026-10-17": {
+        "08:00": "free",
+        "10:00": "booked"
+      }
+    }
+  },
+  "policies": {
+    "office_hours": {
+      "monday_to_friday": {"open": "07:00", "close": "16:00"},
+      "saturday": {"open": "08:00", "close": "12:00"},
+      "sunday": "closed"
+    },
+    "emergency": {
+      "phone_display": "0491 570 110",
+      "availability": "24/7",
+      "after_hours_note": "After-hours make-safe callouts are charged separately on site",
+      "definition": [
+        "Water actively entering the home",
+        "Storm damage with missing or lifted sheets or tiles",
+        "A tree or debris on the roof",
+        "Visible sagging or structural damage"
+      ]
+    },
+    "services_offered": [
+      "Roof restoration (tile and metal)",
+      "Roof replacement to Colorbond metal",
+      "Gutter replacement",
+      "Leak repair",
+      "Free roof inspections"
+    ],
+    "services_not_offered": [
+      "Solar panels",
+      "Skylights",
+      "Asbestos removal (refer the customer to a licensed asbestos removalist)",
+      "Commercial buildings above three storeys"
+    ],
+    "quote_policy": "Free inspection, then a written quote within 48 hours. Online figures are estimates only and are never guaranteed.",
+    "warranty_policy": {
+      "workmanship_restorations_years": 7,
+      "workmanship_replacements_years": 10,
+      "colorbond_material_warranty": "provided by the manufacturer",
+      "no_other_warranty_may_be_promised": true
+    },
+    "insurance_policy": "We can provide a written damage report for an insurance claim. We do not lodge or manage claims."
+  }
+}
