@@ -6,8 +6,13 @@ Black-box HTTP client: sends every assessment message in order to a running
 RafterFlow service and writes eval.md from the real responses.
 
 This command does not touch the application database. Start the service from a
-fresh Appendix-seeded baseline before running (exact reproducible startup flow
-is Phase 6):
+fresh Appendix-seeded baseline before running:
+
+  docker compose down -v
+  docker compose up --build
+  python run_eval.py
+
+Or locally:
 
   python scripts/seed.py --reset
   uvicorn app.main:app --reload

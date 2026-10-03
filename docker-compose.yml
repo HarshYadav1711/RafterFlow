@@ -1,0 +1,18 @@
+services:
+  rafterflow:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Persist SQLite + logs on a named volume so `docker compose down -v`
+      # restores a fresh Appendix baseline on the next `up --build`.
+      DATABASE_URL: sqlite:////data/rafterflow.db
+      NOTIFICATIONS_LOG_PATH: /data/notifications.log
+      AUDIT_LOG_PATH: /data/enquiry_audit.jsonl
+    volumes:
+      - rafterflow_data:/data
+
+volumes:
+  rafterflow_data:
