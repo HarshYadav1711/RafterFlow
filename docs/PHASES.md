@@ -2,17 +2,21 @@
 
 ## Phase 0 — Context Lock & Foundation
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 
 Lock assessment context, project skeleton, configuration, `data/business_rules.json` transcription (Appendices B–E), agent operating docs, and a minimal `GET /health` surface.
 
 ## Phase 1 — Persistence & API Contracts
 
-SQLite/SQLAlchemy models, seed script from appendix data, Pydantic request/response/lead schemas, and stub enquiry/admin route contracts without full agent behaviour.
+**Status:** COMPLETE
+
+SQLite/SQLAlchemy models, seed script from appendix data, Pydantic request/response/lead schemas, and typed contracts preparing for enquiry/admin routes (routes themselves deferred).
 
 ## Phase 2 — Deterministic Business Tools
 
-Pure Python tools for service-area check, pricing (Appendix C worked example), and availability/booking validation against seeded slots.
+**Status:** COMPLETE
+
+Pure Python tools for service-area check, pricing (Appendix C worked example), and read-only availability/policy helpers. Booking mutation remains Phase 4; agent orchestration remains Phase 3.
 
 ## Phase 3 — Agent Orchestration & Conversation Memory
 
