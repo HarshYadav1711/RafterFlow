@@ -55,11 +55,13 @@ def session(engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def seeded_engine(database_url: str, monkeypatch: pytest.MonkeyPatch):
+def seeded_engine(database_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Temporary SQLite DB with Appendix B–E reference data seeded."""
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("REFERENCE_NOW", "2026-10-11T10:00:00+10:00")
     monkeypatch.setenv("ADMIN_API_KEY", "change-me")
+    monkeypatch.setenv("NOTIFICATIONS_LOG_PATH", str(tmp_path / "notifications.log"))
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(tmp_path / "enquiry_audit.jsonl"))
     get_settings.cache_clear()
     run_seed(database_url, reset=True)
     return make_engine(database_url)

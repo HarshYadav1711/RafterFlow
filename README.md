@@ -6,7 +6,7 @@ Bounded AI lead-intake backend for the fictional Summit Roofing Co. (Ideaboat So
 
 ## Current status
 
-**Phase 3 — Agent Orchestration & Conversation Memory** is complete. `POST /enquiries` runs a bounded tool-calling loop with a configurable OpenAI-compatible LLM, then applies deterministic status rules and Australian-English replies. Booking mutation and admin routes remain Phase 4.
+**Phase 4 — Booking Concurrency, Security & Logging** is complete. Inspection booking uses an atomic `UPDATE ... WHERE status='free'` transition, admin `GET /leads` is protected by `X-API-Key`, and each enquiry writes one R10 JSONL audit line. The eval runner remains Phase 5.
 
 ## Development setup (provisional)
 
@@ -24,6 +24,12 @@ uvicorn app.main:app --reload
 
 Health check: `GET http://127.0.0.1:8000/health`
 
+Admin (requires `X-API-Key: <ADMIN_API_KEY>`):
+
+- `GET /leads`
+- `GET /leads/{lead_id}`
+- optional `?status=`
+
 Tests:
 
 ```bash
@@ -36,7 +42,9 @@ Destructive Appendix baseline reset (tests/evals later): `python scripts/seed.py
 
 - **One lead per phone:** For this assessment, `phone` uniquely identifies one continuing lead because R7 requires later messages from the same number to continue that lead. A production CRM might model multiple jobs per customer differently.
 - **Nearest free slots:** When a requested inspection slot is unavailable, alternatives consider only existing free Appendix D slots that are not Sunday and not before `REFERENCE_NOW`. They are sorted by absolute temporal distance from the requested datetime; ties prefer the later slot; at most three are returned.
-- **Tool boundary:** Deterministic tools own postcodes, prices, slot facts, policy facts, and the on-call notify side effect. The LLM decides when to call those tools; finalisation never silently executes `check_service_area` / `estimate_price`. If the model stops early, one bounded recovery nudge asks it to call the unresolved tool; if it still refuses, the turn fails safe with no invented quote. Final customer replies are composed in code. Booking mutation is not implemented yet.
+- **Tool boundary:** Deterministic tools own postcodes, prices, slots, policy facts, booking mutation, and notify/audit side effects. The LLM decides when to call tools; finalisation never silently executes principal business tools. Final customer replies are composed in code.
+- **Atomic booking:** Concurrent bookers race with a conditional SQL update (`status='free'` → `booked`). Exactly one waiter wins; losers get an unavailable business outcome with alternatives.
+- **Logs:** `notifications.log` is only for R5 on-call notify lines. `AUDIT_LOG_PATH` / `enquiry_audit.jsonl` is the separate R10 enquiry audit trail.
 
 ## LLM configuration
 
@@ -46,6 +54,9 @@ Set in `.env` (see `.env.example`):
 - `LLM_BASE_URL` — OpenAI-compatible base URL (Groq/Ollama/etc.)
 - `LLM_API_KEY`
 - `LLM_MODEL`
+- `ADMIN_API_KEY`
+- `NOTIFICATIONS_LOG_PATH`
+- `AUDIT_LOG_PATH`
 
 Automated tests inject a scripted LLM and never call the network.
 

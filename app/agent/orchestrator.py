@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.agent.prompts import SYSTEM_PROMPT, lead_context_block
 from app.agent.replies import compose_reply
 from app.agent.tools_runtime import TOOL_DEFINITIONS, execute_tool
 from app.agent.turn import TurnState
+from app.audit import write_enquiry_audit
 from app.clock import reference_now
 from app.llm import LLMClient, LLMResponse
 from app.models import Lead, LeadStatus, Message, MessageDirection, Urgency
@@ -101,6 +103,9 @@ def required_authoritative_tools(lead: Lead, turn: TurnState) -> list[str]:
         return []
     if turn.out_of_scope or lead.status == LeadStatus.out_of_scope.value:
         return []
+    # Booking attempt (success or failure) resolves the booking path for this turn.
+    if turn.booking is not None:
+        return []
     if (
         ("warranty_policy" in turn.policies or "quote_policy" in turn.policies)
         and not lead.service_type
@@ -135,7 +140,7 @@ def _recovery_nudge(needed: list[str]) -> str:
 def finalize_business_state(session: Session, lead: Lead, turn: TurnState) -> None:
     """
     Enforce status precedence and validate tool outcomes.
-    Must not invoke check_service_area / estimate_price itself.
+    Must not invoke check_service_area / estimate_price / book_inspection itself.
     """
     del session  # session reserved for future persistence-only finalisation needs
     lead.updated_at = reference_now()
@@ -159,11 +164,14 @@ def finalize_business_state(session: Session, lead: Lead, turn: TurnState) -> No
         lead.quote_high = None
         return
 
+    # Successful booking already mutated lead/slot in the booking tool.
+    if turn.booking is not None and turn.booking.outcome.value == "booked":
+        lead.status = LeadStatus.inspection_booked.value
+        return
+
     if turn.unresolved_required_tools:
-        # Fail safe: never invent area/price results in Python.
-        lead.quote_low = None
-        lead.quote_high = None
-        if missing_essential_fields(lead):
+        # Fail safe: never invent area/price/booking results in Python.
+        if missing_essential_fields(lead) and lead.booked_slot_id is None:
             lead.status = LeadStatus.awaiting_info.value
         return
 
@@ -176,11 +184,18 @@ def finalize_business_state(session: Session, lead: Lead, turn: TurnState) -> No
     if not lead.service_type and not lead.postcode and not turn.tool_calls:
         return
 
+    # Failed booking attempt: do not set inspection_booked; keep prior quoted/new state.
+    if turn.booking is not None:
+        if turn.pricing is not None and turn.pricing.calculable:
+            lead.quote_low = turn.pricing.low
+            lead.quote_high = turn.pricing.high
+            if lead.status != LeadStatus.inspection_booked.value:
+                lead.status = LeadStatus.quoted.value
+        return
+
     missing = missing_essential_fields(lead)
     if missing:
         lead.status = LeadStatus.awaiting_info.value
-        lead.quote_low = None
-        lead.quote_high = None
         return
 
     # Quote only when an authoritative estimate_price tool result exists.
@@ -190,8 +205,6 @@ def finalize_business_state(session: Session, lead: Lead, turn: TurnState) -> No
         lead.status = LeadStatus.quoted.value
         return
 
-    lead.quote_low = None
-    lead.quote_high = None
     lead.status = LeadStatus.awaiting_info.value
 
 
@@ -270,6 +283,9 @@ def handle_enquiry(
     request: EnquiryRequest,
     llm: LLMClient,
 ) -> EnquiryResponse:
+    # Monotonic host timer for R10 latency only — business time still uses REFERENCE_NOW.
+    started = time.perf_counter()
+
     lead = get_or_create_lead(session, request)
 
     inbound = Message(
@@ -300,8 +316,17 @@ def handle_enquiry(
     session.add(outbound)
     session.flush()
 
-    return EnquiryResponse(
+    response = EnquiryResponse(
         reply=reply,
         lead=LeadSchema.model_validate(lead),
         tool_calls=[ToolCall(**item) for item in turn.tool_calls],
     )
+
+    latency_ms = max(0, int((time.perf_counter() - started) * 1000))
+    write_enquiry_audit(
+        lead_id=lead.lead_id,
+        final_status=lead.status,
+        tool_calls=list(turn.tool_calls),
+        latency_ms=latency_ms,
+    )
+    return response

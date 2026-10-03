@@ -7,6 +7,8 @@ from typing import Any
 from app.agent.missing import missing_essential_fields
 from app.agent.turn import TurnState
 from app.models import Lead, LeadStatus
+from app.tools.availability import parse_slot_id
+from app.tools.booking import BookingOutcome
 
 
 def _name_prefix(lead: Lead) -> str:
@@ -17,6 +19,15 @@ def _name_prefix(lead: Lead) -> str:
 
 def _format_money(amount: int) -> str:
     return f"${amount:,}"
+
+
+def _format_slot_safe(slot_id: str) -> str:
+    """Human slot label in Brisbane-local time."""
+    when = parse_slot_id(slot_id)
+    if when is None:
+        return slot_id
+    day = when.day
+    return when.strftime(f"%A {day} %B %Y at %H:%M")
 
 
 def _ask_for(fields: list[str]) -> str:
@@ -86,6 +97,45 @@ def compose_reply(lead: Lead, turn: TurnState) -> str:
             f"{_name_prefix(lead)} I couldn't complete the required business checks for this request, "
             "so I won't provide a quote or service-area decision yet. "
             "Please send your message again and I'll continue from the details already on file."
+        )
+
+    if turn.booking is not None:
+        booking = turn.booking
+        if booking.outcome is BookingOutcome.booked and booking.booked_slot_id:
+            when = _format_slot_safe(booking.booked_slot_id)
+            return (
+                f"{_name_prefix(lead)} You're booked for a free roof inspection on {when} "
+                f"(Brisbane time). Your slot id is {booking.booked_slot_id}."
+            )
+
+        reason = {
+            BookingOutcome.sunday: "we don't offer Sunday inspections",
+            BookingOutcome.in_past: "that time is in the past",
+            BookingOutcome.not_found: "that inspection slot isn't one we offer",
+            BookingOutcome.unavailable: "that inspection slot isn't available",
+            BookingOutcome.malformed: "that booking time wasn't recognised",
+        }.get(booking.outcome, "that inspection slot isn't available")
+
+        alts = booking.alternatives
+        if alts:
+            listed = "; ".join(
+                f"{_format_slot_safe(a['slot_id'])} ({a['slot_id']})" for a in alts[:3]
+            )
+            return (
+                f"{_name_prefix(lead)} I couldn't book {booking.requested_slot_id} because {reason}. "
+                f"The nearest free options are: {listed}. "
+                "Reply with one of those exact slot times if you'd like me to book it."
+            )
+        return (
+            f"{_name_prefix(lead)} I couldn't book {booking.requested_slot_id} because {reason}. "
+            "There aren't any free alternatives available right now."
+        )
+
+    if status == LeadStatus.inspection_booked.value and lead.booked_slot_id:
+        when = _format_slot_safe(lead.booked_slot_id)
+        return (
+            f"{_name_prefix(lead)} You're booked for a free roof inspection on {when} "
+            f"(Brisbane time). Your slot id is {lead.booked_slot_id}."
         )
 
     # Policy honesty path (e.g. Raj): warranty/quote questions without a completed quote.

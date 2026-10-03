@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.agent.turn import TurnState
 from app.clock import reference_now
 from app.models import Lead, LeadStatus, Urgency
+from app.tools.booking import book_inspection
 from app.tools.emergency import notify_on_call
 from app.tools.policy import get_policy
 from app.tools.pricing import PricingInput, estimate_price
@@ -147,6 +148,28 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "book_inspection",
+            "description": (
+                "Book a free roof inspection into an exact Appendix D slot id "
+                "(YYYY-MM-DDTHH:MM Brisbane time). Deterministic code validates "
+                "existence, Sunday/past rules, and free status."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "slot_id": {
+                        "type": "string",
+                        "description": "Exact slot id, e.g. 2026-10-16T11:00",
+                    }
+                },
+                "required": ["slot_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 ALLOWED_TOOL_NAMES = {t["function"]["name"] for t in TOOL_DEFINITIONS}
@@ -194,20 +217,20 @@ def execute_tool(
         turn.record(name, args, result)
         return result
 
-    # Emergency short-circuit: block pricing/area/booking-style work after escalation.
-    if turn.emergency and name in {"estimate_price", "check_service_area"}:
+    # Emergency short-circuit: block pricing/area/booking after escalation.
+    if turn.emergency and name in {"estimate_price", "check_service_area", "book_inspection"}:
         result = {"blocked": True, "reason": "emergency_active"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
         return result
 
-    if turn.out_of_area and name == "estimate_price":
+    if turn.out_of_area and name in {"estimate_price", "book_inspection"}:
         result = {"blocked": True, "reason": "out_of_area"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
         return result
 
-    if turn.out_of_scope and name == "estimate_price":
+    if turn.out_of_scope and name in {"estimate_price", "book_inspection"}:
         result = {"blocked": True, "reason": "out_of_scope"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
@@ -305,6 +328,14 @@ def execute_tool(
             "services_not_offered": services_not,
         }
         turn.record(name, args, result)
+        return result
+
+    if name == "book_inspection":
+        slot_id = str(args.get("slot_id", "")).strip()
+        booking = book_inspection(session, lead, slot_id)
+        turn.booking = booking
+        result = booking.as_dict()
+        turn.record(name, {"slot_id": slot_id}, result)
         return result
 
     result = {"error": "unhandled_tool", "tool": name}

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Mock on-call notify destination (R5). Override in tests.
     notifications_log_path: str = Field(default="notifications.log", alias="NOTIFICATIONS_LOG_PATH")
 
+    # R10 enquiry audit JSONL (separate from notifications.log).
+    audit_log_path: str = Field(default="enquiry_audit.jsonl", alias="AUDIT_LOG_PATH")
+
     @field_validator("reference_now")
     @classmethod
     def must_be_timezone_aware(cls, value: datetime) -> datetime:

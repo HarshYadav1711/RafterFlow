@@ -26,7 +26,9 @@ LLM-backed intake loop that calls tools, extracts only stated fields, continues 
 
 ## Phase 4 — Booking Concurrency, Security & Logging
 
-Double-booking safety, admin `X-API-Key` protection, emergency notify mock, JSONL enquiry logging, and guardrail enforcement.
+**Status:** COMPLETE
+
+Atomic inspection booking (`UPDATE ... WHERE status='free'`), admin `X-API-Key` protection for `GET /leads`, and R10 enquiry JSONL audit logging with monotonic latency.
 
 ## Phase 5 — Evaluation Runner & Adversarial Hardening
 

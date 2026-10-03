@@ -6,6 +6,7 @@ from app.tools.availability import (
     get_slot,
     inspect_slot_request,
 )
+from app.tools.booking import BookingOutcome, BookingResult, book_inspection
 from app.tools.emergency import notify_on_call
 from app.tools.policy import get_policies, get_policy
 from app.tools.pricing import PricingInput, PricingResult, estimate_price
@@ -21,6 +22,9 @@ __all__ = [
     "get_slot",
     "inspect_slot_request",
     "find_nearest_free_slots",
+    "BookingOutcome",
+    "BookingResult",
+    "book_inspection",
     "get_policy",
     "get_policies",
     "notify_on_call",

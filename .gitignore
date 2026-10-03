@@ -29,9 +29,11 @@ htmlcov/
 *.sqlite
 *.sqlite3
 notifications.log
+enquiry_audit.jsonl
 eval.md
 logs/
 *.log
+*.jsonl
 
 # IDE / OS
 .idea/

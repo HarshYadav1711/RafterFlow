@@ -26,9 +26,11 @@ def make_engine(database_url: str | None = None, *, echo: bool = False) -> Engin
     if _is_sqlite(url):
 
         @event.listens_for(engine, "connect")
-        def _enable_sqlite_fk(dbapi_connection, _connection_record) -> None:  # noqa: ANN001
+        def _configure_sqlite(dbapi_connection, _connection_record) -> None:  # noqa: ANN001
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            # WAL improves concurrent writers for double-booking tests under SQLite.
+            cursor.execute("PRAGMA journal_mode=WAL")
             cursor.close()
 
     return engine

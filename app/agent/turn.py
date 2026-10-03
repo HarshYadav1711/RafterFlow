@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.tools.booking import BookingResult
 from app.tools.pricing import PricingResult
 from app.tools.service_area import ServiceAreaResult
 
@@ -18,6 +19,7 @@ class TurnState:
     notified: bool = False
     area: ServiceAreaResult | None = None
     pricing: PricingResult | None = None
+    booking: BookingResult | None = None
     policies: dict[str, Any] = field(default_factory=dict)
     blocked_tools: list[str] = field(default_factory=list)
     recovery_used: bool = False
