@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Assessment clock zone (Australia/Brisbane, no DST). Used when SQLite returns naive datetimes.
+AEST = timezone(timedelta(hours=10))
 
 
 class Channel(str, Enum):
@@ -90,8 +93,9 @@ class Lead(BaseModel):
     @field_validator("created_at", "updated_at")
     @classmethod
     def timestamps_must_be_timezone_aware(cls, value: datetime) -> datetime:
+        # SQLite drops tzinfo on round-trip; re-attach Brisbane offset at the API boundary.
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("lead timestamps must be timezone-aware")
+            return value.replace(tzinfo=AEST)
         return value
 
 

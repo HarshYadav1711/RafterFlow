@@ -20,7 +20,9 @@ Pure Python tools for service-area check, pricing (Appendix C worked example), a
 
 ## Phase 3 — Agent Orchestration & Conversation Memory
 
-LLM-backed intake loop that calls tools, extracts only stated fields, continues leads by phone, and returns reply + lead + tool_calls.
+**Status:** COMPLETE
+
+LLM-backed intake loop that calls tools, extracts only stated fields, continues leads by phone, and returns reply + lead + tool_calls. Booking mutation remains Phase 4.
 
 ## Phase 4 — Booking Concurrency, Security & Logging
 
