@@ -32,7 +32,9 @@ Atomic inspection booking (`UPDATE ... WHERE status='free'`), admin `X-API-Key` 
 
 ## Phase 5 — Evaluation Runner & Adversarial Hardening
 
-Appendix F runner → `eval.md`; harden honesty/guardrails against out-of-scope, warranty, and injection cases.
+**Status:** COMPLETE
+
+Black-box `python run_eval.py` sends Appendix F messages in order to `POST /enquiries` and writes `eval.md`. Adversarial tests cover tool authority, authoritative input binding, stale quotes, isolation, and booking/admin boundaries; runtime changed only where tests proved defects.
 
 ## Phase 6 — Reproducibility, Documentation & Submission
 

@@ -6,7 +6,7 @@ Bounded AI lead-intake backend for the fictional Summit Roofing Co. (Ideaboat So
 
 ## Current status
 
-**Phase 4 — Booking Concurrency, Security & Logging** is complete. Inspection booking uses an atomic `UPDATE ... WHERE status='free'` transition, admin `GET /leads` is protected by `X-API-Key`, and each enquiry writes one R10 JSONL audit line. The eval runner remains Phase 5.
+**Phase 5 — Evaluation Runner & Adversarial Hardening** is complete. Use `python run_eval.py` against a running service to generate `eval.md` from Appendix F. Final README polish remains Phase 6.
 
 ## Development setup (provisional)
 
@@ -36,7 +36,25 @@ Tests:
 pytest
 ```
 
-Destructive Appendix baseline reset (tests/evals later): `python scripts/seed.py --reset`
+Destructive Appendix baseline reset: `python scripts/seed.py --reset`
+
+### Appendix F evaluation
+
+`python run_eval.py` is an HTTP-only client: it posts Appendix F messages to a
+running service and writes `eval.md`. It does not reset or alter the database.
+Start the service from a fresh Appendix-seeded baseline first (exact
+reproducible startup packaging is Phase 6):
+
+```bash
+python scripts/seed.py --reset
+uvicorn app.main:app --reload
+# other terminal:
+python run_eval.py
+```
+
+Override the target with `EVAL_BASE_URL` or `--base-url`. The runner does not
+use admin credentials. Pytest never calls a real model; a live `eval.md` for
+submission needs a configured provider (Phase 6 if not run manually).
 
 ## Assumptions
 

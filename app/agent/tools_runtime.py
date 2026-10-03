@@ -29,6 +29,19 @@ CAPTURE_FIELDS = (
     "suburb",
 )
 
+# Changing these invalidates a prior indicative quote / area decision.
+_QUOTE_SENSITIVE_FIELDS = frozenset(
+    {
+        "service_type",
+        "roof_material",
+        "storeys",
+        "steep_pitch",
+        "size_m2",
+        "gutter_length_m",
+        "postcode",
+    }
+)
+
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -69,11 +82,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "check_service_area",
-            "description": "Check whether a postcode is inside Summit Roofing's service area.",
+            "description": (
+                "Check whether the current lead's persisted postcode is inside "
+                "Summit Roofing's service area. Call only after capture_lead_details "
+                "has recorded the customer's postcode. Tool arguments are not used "
+                "as the authoritative postcode."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"postcode": {"type": "string"}},
-                "required": ["postcode"],
+                "properties": {
+                    "postcode": {
+                        "type": "string",
+                        "description": "Ignored; the persisted lead postcode is authoritative.",
+                    }
+                },
                 "additionalProperties": False,
             },
         },
@@ -195,14 +217,26 @@ def _pricing_result_dict(result) -> dict[str, Any]:
 def capture_lead_details(lead: Lead, args: dict[str, Any]) -> dict[str, Any]:
     """Update only keys present in args; omission never clears existing values."""
     applied: dict[str, Any] = {}
+    invalidated_quote = False
     for key in CAPTURE_FIELDS:
         if key not in args:
             continue
         value = args[key]
+        previous = getattr(lead, key)
         setattr(lead, key, value)
         applied[key] = value
+        if key in _QUOTE_SENSITIVE_FIELDS and value != previous:
+            invalidated_quote = True
+    if invalidated_quote:
+        lead.quote_low = None
+        lead.quote_high = None
+        if lead.status == LeadStatus.quoted.value:
+            lead.status = LeadStatus.awaiting_info.value
+        if lead.status == LeadStatus.out_of_area.value and "postcode" in applied:
+            # Postcode changed — prior out-of-area decision is stale until re-checked.
+            lead.status = LeadStatus.awaiting_info.value
     lead.updated_at = reference_now()
-    return {"updated_fields": applied}
+    return {"updated_fields": applied, "quote_invalidated": invalidated_quote}
 
 
 def execute_tool(
@@ -217,20 +251,24 @@ def execute_tool(
         turn.record(name, args, result)
         return result
 
+    emergency_active = turn.emergency or lead.status == LeadStatus.emergency.value
+    out_of_area_active = turn.out_of_area or lead.status == LeadStatus.out_of_area.value
+    out_of_scope_active = turn.out_of_scope or lead.status == LeadStatus.out_of_scope.value
+
     # Emergency short-circuit: block pricing/area/booking after escalation.
-    if turn.emergency and name in {"estimate_price", "check_service_area", "book_inspection"}:
+    if emergency_active and name in {"estimate_price", "check_service_area", "book_inspection"}:
         result = {"blocked": True, "reason": "emergency_active"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
         return result
 
-    if turn.out_of_area and name in {"estimate_price", "book_inspection"}:
+    if out_of_area_active and name in {"estimate_price", "book_inspection"}:
         result = {"blocked": True, "reason": "out_of_area"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
         return result
 
-    if turn.out_of_scope and name in {"estimate_price", "book_inspection"}:
+    if out_of_scope_active and name in {"estimate_price", "book_inspection"}:
         result = {"blocked": True, "reason": "out_of_scope"}
         turn.blocked_tools.append(name)
         turn.record(name, args, result)
@@ -238,14 +276,19 @@ def execute_tool(
 
     if name == "capture_lead_details":
         result = capture_lead_details(lead, args)
-        turn.record(name, args, result)
+        turn.record(name, {k: args[k] for k in CAPTURE_FIELDS if k in args}, result)
         return result
 
     if name == "check_service_area":
-        postcode = args.get("postcode") or lead.postcode
+        # Authoritative binding: only persisted lead.postcode. Never trust tool args.
+        postcode = lead.postcode
         if not postcode:
-            result = {"error": "postcode_required"}
-            turn.record(name, args, result)
+            result = {
+                "error": "postcode_required",
+                "resolved": False,
+                "message": "Capture the customer's postcode on the lead before checking area.",
+            }
+            turn.record(name, {}, result)
             return result
         area = check_service_area(session, str(postcode))
         turn.area = area
@@ -254,6 +297,10 @@ def execute_tool(
             lead.status = LeadStatus.out_of_area.value
             lead.quote_low = None
             lead.quote_high = None
+        else:
+            turn.out_of_area = False
+            if lead.status == LeadStatus.out_of_area.value:
+                lead.status = LeadStatus.awaiting_info.value
         result = asdict(area)
         turn.record(name, {"postcode": str(postcode)}, result)
         return result
@@ -263,6 +310,14 @@ def execute_tool(
             result = {"error": "service_type_required"}
             turn.record(name, args, result)
             return result
+        inputs = {
+            "service_type": lead.service_type,
+            "roof_material": lead.roof_material,
+            "size_m2": lead.size_m2,
+            "gutter_length_m": lead.gutter_length_m,
+            "storeys": lead.storeys,
+            "steep_pitch": lead.steep_pitch,
+        }
         pricing = estimate_price(
             session,
             PricingInput(
@@ -278,8 +333,9 @@ def execute_tool(
         if pricing.calculable:
             lead.quote_low = pricing.low
             lead.quote_high = pricing.high
-        result = _pricing_result_dict(pricing)
-        turn.record(name, args, result)
+        result = {**_pricing_result_dict(pricing), "inputs": inputs}
+        # Trace records empty model args plus authoritative inputs used.
+        turn.record(name, {}, result)
         return result
 
     if name == "get_policy":
