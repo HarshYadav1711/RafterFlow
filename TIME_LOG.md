@@ -1,17 +1,30 @@
-# Time log
+# Time Log
 
-Assessment requirement: short note of roughly how many hours were spent and on what.
+I did not run a dedicated time tracker during this assessment, so I do not want to report a fabricated focused-hours total.
 
-**Status:** structure prepared — **candidate must confirm actual focused hours before submission.**
+The project was worked on across 3 October and 5 October 2026.
 
-| Area | Focused hours (candidate to confirm) | Notes |
-|------|--------------------------------------|-------|
-| Specification / architecture | _TBD_ | Assessment PDF, appendices → `business_rules.json`, AGENTS.md |
-| Persistence + deterministic tools | _TBD_ | Models, seed, area/pricing/availability/policy/emergency |
-| Agent orchestration | _TBD_ | Bounded tool loop, memory by phone, deterministic replies |
-| Booking / security / logging | _TBD_ | Atomic booking, admin API key, R10 audit JSONL |
-| Eval / adversarial hardening | _TBD_ | `run_eval.py`, invariant checks, adversarial regressions |
-| Documentation / Docker / final verification | _TBD_ | README, compose packaging, compliance check |
-| **Total (approx.)** | **_TBD_** | |
+## Verifiable timeline
 
-Do not invent hours. Fill the `_TBD_` cells with truthful focused time before submission.
+- First project commit: 3 October 2026, 12:29
+- Main implementation commits on 3 October continued until approximately 18:25
+- Additional evaluation, hardening, Docker verification, real-model testing, and final fixes were completed on 5 October
+- Final recorded commit activity: 5 October 2026, 21:37
+
+The total calendar span from the first commit to the final work was approximately 57 hours, but this includes nights, breaks, and an inactive day and should **not** be interpreted as focused engineering time.
+
+Git history shows roughly a six-hour commit window on 3 October, with additional work on 5 October. Exact focused time was not tracked reliably enough for me to state a precise total.
+
+## Work completed
+
+- Specification review and architecture planning
+- FastAPI / SQLite persistence and assessment data seeding
+- Deterministic service-area, pricing, policy, and availability tools
+- Bounded LLM agent orchestration and conversation memory
+- Atomic inspection booking and concurrency handling
+- Admin API security and JSONL audit logging
+- Appendix F evaluation runner and adversarial testing
+- Real-model evaluation and defect hardening
+- Docker packaging, documentation, and final verification
+
+I chose to report the timing limitation explicitly rather than estimate hours that I cannot verify.
