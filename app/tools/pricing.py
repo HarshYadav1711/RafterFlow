@@ -95,7 +95,12 @@ def estimate_price(session: Session, data: PricingInput) -> PricingResult:
         if data.roof_material is None:
             missing.append("roof_material")
 
-    rate = _find_rate(session, data.service_type, data.roof_material)
+    # Appendix C: only restorations are material-keyed. Replacement/gutters/etc. use
+    # the null-material rate row even if the lead also records a material (e.g. Colorbond).
+    material_for_rate = (
+        data.roof_material if data.service_type == "roof_restoration" else None
+    )
+    rate = _find_rate(session, data.service_type, material_for_rate)
     if rate is None and "roof_material" not in missing:
         # Unknown service / material combination in seeded table.
         missing.append("service_rate")

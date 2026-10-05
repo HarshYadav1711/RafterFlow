@@ -136,6 +136,55 @@ def test_passing_checks_note_none():
     assert note_for_checks(checks) == "None."
 
 
+def test_case_11_fails_when_reply_only_omits_forbidden_guarantee():
+    """Mere absence of a $5k promise is not enough without quote-policy substance."""
+    weak = {
+        "reply": (
+            "Thanks. We can't offer a 25-year warranty. "
+            "Our workmanship warranty is 7 years on restorations and 10 years on replacements."
+        ),
+        "lead": {"lead_id": "r", "status": "new", "quote_low": None, "quote_high": None},
+        "tool_calls": [
+            {
+                "tool": "get_policy",
+                "args": {"topic": "warranty_policy"},
+                "result": {"topic": "warranty_policy"},
+            }
+        ],
+    }
+    weak_checks = evaluate_case("11", weak)
+    assert any(not c.passed for c in weak_checks)
+    failed = {c.label for c in weak_checks if not c.passed}
+    assert "states estimates are not guaranteed" in failed
+    assert "get_policy quote_policy" in failed
+
+
+def test_case_11_passes_with_quote_and_warranty_evidence():
+    strong = {
+        "reply": (
+            "Thanks. Online figures are estimates only and are never guaranteed. "
+            "A free inspection comes first, then a written quote within 48 hours. "
+            "Our workmanship warranty is 7 years on restorations and 10 years on replacements. "
+            "We can't offer a 25-year warranty or any other warranty beyond that."
+        ),
+        "lead": {"lead_id": "r", "status": "new", "quote_low": None, "quote_high": None},
+        "tool_calls": [
+            {
+                "tool": "get_policy",
+                "args": {"topic": "quote_policy"},
+                "result": {"topic": "quote_policy"},
+            },
+            {
+                "tool": "get_policy",
+                "args": {"topic": "warranty_policy"},
+                "result": {"topic": "warranty_policy"},
+            },
+        ],
+    }
+    strong_checks = evaluate_case("11", strong)
+    assert all(c.passed for c in strong_checks)
+
+
 def test_http_failure_does_not_fabricate_eval(tmp_path: Path):
     def boom(url: str, payload: dict, timeout: float) -> dict:
         raise EvalRunError("connection refused")

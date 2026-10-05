@@ -103,7 +103,8 @@ def required_authoritative_tools(lead: Lead, turn: TurnState) -> list[str]:
         return []
     if turn.out_of_scope or lead.status == LeadStatus.out_of_scope.value:
         return []
-    # Booking attempt (success or failure) resolves the booking path for this turn.
+    # A real booking tool outcome (success or validated failure) resolves this path.
+    # Blocked attempts (e.g. service_area_unresolved) do not set turn.booking.
     if turn.booking is not None:
         return []
     if (
@@ -114,7 +115,10 @@ def required_authoritative_tools(lead: Lead, turn: TurnState) -> list[str]:
     if not lead.service_type and not lead.postcode and not turn.tool_calls:
         return []
 
-    if lead.postcode and turn.area is None:
+    # Area must be resolved for the CURRENT postcode before pricing or booking.
+    if lead.postcode and (
+        turn.area is None or turn.area.postcode != str(lead.postcode)
+    ):
         return ["check_service_area"]
 
     if turn.out_of_area or (turn.area is not None and not turn.area.in_area):

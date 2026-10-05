@@ -39,6 +39,11 @@ def _ask_for(fields: list[str]) -> str:
         "gutter_length_m": "the approximate gutter length in lineal metres",
     }
     readable = [labels.get(f, f) for f in fields]
+    if not readable:
+        return (
+            "I still need a bit more before I can finish this enquiry — "
+            "please send any remaining job details, or ask me to estimate or book when you're ready."
+        )
     if len(readable) == 1:
         return f"Could you please share {readable[0]}?"
     if len(readable) == 2:
@@ -63,9 +68,8 @@ def compose_reply(lead: Lead, turn: TurnState) -> str:
     if status == LeadStatus.out_of_area.value or turn.out_of_area:
         return (
             f"{_name_prefix(lead)} Thanks for getting in touch. "
-            f"Unfortunately we don't service postcode {lead.postcode} at the moment, "
-            "so I can't provide a price or book an inspection. "
-            "If you're near inner Brisbane and have another property postcode, send it through."
+            f"Unfortunately we don't service postcode {lead.postcode}, "
+            "so I can't provide a price or book an inspection."
         )
 
     if status == LeadStatus.out_of_scope.value or turn.out_of_scope:
@@ -138,7 +142,7 @@ def compose_reply(lead: Lead, turn: TurnState) -> str:
             f"(Brisbane time). Your slot id is {lead.booked_slot_id}."
         )
 
-    # Policy honesty path (e.g. Raj): warranty/quote questions without a completed quote.
+    # Policy honesty path: warranty/quote questions without a completed quote.
     if (
         status not in {LeadStatus.quoted.value, LeadStatus.awaiting_info.value}
         and ("warranty_policy" in turn.policies or "quote_policy" in turn.policies)
@@ -148,9 +152,10 @@ def compose_reply(lead: Lead, turn: TurnState) -> str:
         quote_policy = turn.policies.get("quote_policy")
         warranty = turn.policies.get("warranty_policy") or {}
         if quote_policy:
+            # Mirror Appendix E quote_policy facts without promising any amount.
             parts.append(
-                "We can't guarantee a fixed price online — figures are estimates only, "
-                "and a final written quote follows a free inspection."
+                "Online figures are estimates only and are never guaranteed. "
+                "A free inspection comes first, then a written quote within 48 hours."
             )
         if warranty:
             parts.append(
@@ -173,6 +178,10 @@ def compose_reply(lead: Lead, turn: TurnState) -> str:
         elif lead.service_type:
             known_bits.append(lead.service_type.replace("_", " "))
         prefix = _name_prefix(lead)
+        if not missing:
+            # Essentials present but no completed quote this turn (e.g. model stopped early).
+            noted = f" I've noted {known_bits[0]}." if known_bits else ""
+            return f"{prefix}{noted} {_ask_for([])}"
         if known_bits:
             return f"{prefix} I've noted {known_bits[0]}. {_ask_for(missing)}"
         return f"{prefix} {_ask_for(missing)}"

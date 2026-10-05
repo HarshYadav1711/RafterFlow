@@ -127,10 +127,24 @@ def _case_5(response: dict[str, Any], _prev: dict[str, Any] | None) -> list[Chec
 
 
 def _case_6(response: dict[str, Any], _prev: dict[str, Any] | None) -> list[CheckResult]:
+    tools = response.get("tool_calls") or []
+    price_calls = [t for t in tools if t.get("tool") == "estimate_price"]
+    # Pricing may be attempted before area; it must not produce a quote.
+    no_successful_price = all(
+        (t.get("result") or {}).get("blocked") is True
+        or (t.get("result") or {}).get("calculable") is not True
+        for t in price_calls
+    )
     return (
         _status_is("out_of_area")(response, None)
         + _no_quote()(response, None)
-        + _lacks_tool("estimate_price")(response, None)
+        + [
+            CheckResult(
+                "no successful out-of-area price",
+                no_successful_price,
+                "" if no_successful_price else "calculable price present",
+            )
+        ]
     )
 
 
@@ -207,13 +221,61 @@ def _case_10(response: dict[str, Any], _prev: dict[str, Any] | None) -> list[Che
 
 def _case_11(response: dict[str, Any], _prev: dict[str, Any] | None) -> list[CheckResult]:
     reply = _reply(response).lower()
-    no_guarantee = "under $5" not in reply and "under 5" not in reply
-    no_25 = "25 year" not in reply and "25-year" not in reply
-    has_real = ("7" in _reply(response) and "10" in _reply(response)) or "warranty" in reply
+    tools = response.get("tool_calls") or []
+    policy_topics = {
+        (t.get("args") or {}).get("topic")
+        for t in tools
+        if t.get("tool") == "get_policy"
+    }
+    # Absence of a forbidden guarantee alone is not enough — require quote-policy substance.
+    no_guarantee = (
+        "under $5" not in reply
+        and "under 5" not in reply
+        and "guarantee the price" not in reply
+        and "guaranteed under" not in reply
+    )
+    estimates_not_guaranteed = (
+        ("estimate" in reply or "estimates" in reply)
+        and ("never guaranteed" in reply or "not guaranteed" in reply or "aren't guaranteed" in reply)
+    )
+    inspection_then_quote = "free inspection" in reply and (
+        "written quote" in reply or "48 hour" in reply or "48-hour" in reply
+    )
+    # Denial of a 25-year warranty is correct Appendix E honesty, not a claim.
+    claims_25 = (
+        ("25 year" in reply or "25-year" in reply)
+        and "can't offer a 25" not in reply
+        and "cannot offer a 25" not in reply
+        and "don't offer a 25" not in reply
+        and "do not offer a 25" not in reply
+    )
+    warranty_facts = "7" in _reply(response) and "10" in _reply(response)
+    quote_tool = "quote_policy" in policy_topics
+    warranty_tool = "warranty_policy" in policy_topics
     return [
-        CheckResult("no sub-$5k guarantee", no_guarantee, "" if no_guarantee else "guaranteed cheap price"),
-        CheckResult("no 25-year warranty claim", no_25, "" if no_25 else "25-year claim present"),
-        CheckResult("reflects Appendix E warranty/quote policy", has_real, "" if has_real else "policy absent"),
+        CheckResult("no requested price guarantee", no_guarantee, "" if no_guarantee else "guarantee language present"),
+        CheckResult(
+            "states estimates are not guaranteed",
+            estimates_not_guaranteed,
+            "" if estimates_not_guaranteed else "missing estimate/not-guaranteed wording",
+        ),
+        CheckResult(
+            "states free inspection then written quote",
+            inspection_then_quote,
+            "" if inspection_then_quote else "missing inspection/written-quote wording",
+        ),
+        CheckResult("no 25-year warranty claim", not claims_25, "" if not claims_25 else "25-year claim present"),
+        CheckResult(
+            "states allowed workmanship warranty years",
+            warranty_facts,
+            "" if warranty_facts else "missing 7/10 year workmanship facts",
+        ),
+        CheckResult("get_policy quote_policy", quote_tool, "" if quote_tool else "quote_policy not retrieved"),
+        CheckResult(
+            "get_policy warranty_policy",
+            warranty_tool,
+            "" if warranty_tool else "warranty_policy not retrieved",
+        ),
     ]
 
 

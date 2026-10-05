@@ -214,6 +214,93 @@ def test_area_check_without_lead_postcode_ignores_model_args(seeded_session):
     assert lead.quote_low is None
 
 
+def test_booking_blocked_without_authoritative_area_check(seeded_session):
+    lead = _lead(
+        seeded_session,
+        phone="+61491880405",
+        service_type="inspection_only",
+        postcode="4064",
+    )
+    turn = TurnState()
+    slot_id = "2026-10-16T11:00"
+    before = seeded_session.get(AvailabilitySlot, slot_id)
+    assert before is not None and before.status == SlotStatus.free.value
+
+    result = execute_tool(
+        seeded_session, lead, turn, "book_inspection", {"slot_id": slot_id}
+    )
+    assert result.get("blocked") is True
+    assert result.get("reason") == "service_area_unresolved"
+    assert turn.booking is None
+    seeded_session.refresh(before)
+    assert before.status == SlotStatus.free.value
+    assert lead.booked_slot_id is None
+
+
+def test_pricing_blocked_without_authoritative_area_check(seeded_session):
+    lead = _lead(
+        seeded_session,
+        phone="+61491880407",
+        service_type="roof_restoration",
+        roof_material="tile",
+        size_m2=180,
+        storeys=1,
+        postcode="4300",
+    )
+    turn = TurnState()
+    result = execute_tool(seeded_session, lead, turn, "estimate_price", {})
+    assert result.get("blocked") is True
+    assert result.get("reason") == "service_area_unresolved"
+    assert turn.pricing is None
+    assert lead.quote_low is None
+    assert lead.quote_high is None
+
+    area = execute_tool(
+        seeded_session, lead, turn, "check_service_area", {"postcode": "4300"}
+    )
+    assert area["in_area"] is False
+    blocked = execute_tool(seeded_session, lead, turn, "estimate_price", {})
+    assert blocked.get("blocked") is True
+    assert blocked.get("reason") == "out_of_area"
+    assert lead.quote_low is None
+
+
+def test_stale_area_for_old_postcode_does_not_authorize_booking(seeded_session):
+    lead = _lead(
+        seeded_session,
+        phone="+61491880406",
+        service_type="inspection_only",
+        postcode="4064",
+    )
+    turn = TurnState()
+    area = execute_tool(
+        seeded_session, lead, turn, "check_service_area", {"postcode": "4064"}
+    )
+    assert area["in_area"] is True
+
+    capture = execute_tool(
+        seeded_session,
+        lead,
+        turn,
+        "capture_lead_details",
+        {"postcode": "4300"},
+    )
+    assert capture["updated_fields"]["postcode"] == "4300"
+    assert turn.area is None
+
+    slot_id = "2026-10-16T13:00"
+    before = seeded_session.get(AvailabilitySlot, slot_id)
+    assert before is not None and before.status == SlotStatus.free.value
+    result = execute_tool(
+        seeded_session, lead, turn, "book_inspection", {"slot_id": slot_id}
+    )
+    assert result.get("blocked") is True
+    assert result.get("reason") == "service_area_unresolved"
+    seeded_session.refresh(before)
+    assert before.status == SlotStatus.free.value
+    assert lead.booked_slot_id is None
+
+
 def test_pricing_uses_lead_facts_not_model_args(seeded_session):
     lead = _lead(
         seeded_session,
@@ -225,6 +312,10 @@ def test_pricing_uses_lead_facts_not_model_args(seeded_session):
         postcode="4064",
     )
     turn = TurnState()
+    area = execute_tool(
+        seeded_session, lead, turn, "check_service_area", {"postcode": "4064"}
+    )
+    assert area["in_area"] is True
     # Even if a buggy client stuffed size into args, pricing must ignore them.
     result = execute_tool(
         seeded_session,
@@ -241,6 +332,36 @@ def test_pricing_uses_lead_facts_not_model_args(seeded_session):
 
 
 # --- Protected fields -------------------------------------------------------
+
+
+def test_capture_null_args_are_treated_as_omit(seeded_session):
+    lead = _lead(
+        seeded_session,
+        phone="+61491880410",
+        service_type="roof_restoration",
+        roof_material="metal",
+        size_m2=120,
+        postcode="4066",
+    )
+    turn = TurnState()
+    result = execute_tool(
+        seeded_session,
+        lead,
+        turn,
+        "capture_lead_details",
+        {
+            "name": "NullOmit",
+            "storeys": None,
+            "steep_pitch": None,
+            "gutter_length_m": None,
+            "size_m2": None,
+        },
+    )
+    assert lead.name == "NullOmit"
+    assert lead.size_m2 == 120
+    assert lead.roof_material == "metal"
+    assert "size_m2" not in result["updated_fields"]
+    assert "storeys" not in result["updated_fields"]
 
 
 def test_capture_cannot_set_protected_fields(seeded_session):

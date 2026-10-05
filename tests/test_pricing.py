@@ -52,6 +52,23 @@ def test_daniel_replacement(seeded_session):
     assert result.high == 34800
 
 
+def test_replacement_ignores_lead_roof_material_for_rate_lookup(seeded_session):
+    """Colorbond / metal on a replacement lead must still use the null-material rate."""
+    result = estimate_price(
+        seeded_session,
+        PricingInput(
+            service_type="roof_replacement",
+            roof_material="metal",
+            size_m2=220,
+            storeys=2,
+            steep_pitch=True,
+        ),
+    )
+    assert result.calculable is True
+    assert result.low == 26450
+    assert result.high == 34800
+
+
 def test_aisha_metal_restoration(seeded_session):
     result = estimate_price(
         seeded_session,

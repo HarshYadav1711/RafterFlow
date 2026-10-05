@@ -7,7 +7,7 @@ from app.admin import router as admin_router
 from app.agent.orchestrator import handle_enquiry
 from app.audit import AuditLogError
 from app.deps import get_db, get_llm
-from app.llm import LLMClient
+from app.llm import LLMClient, LLMProviderError, LLMRateLimitError
 from app.schemas import EnquiryRequest, EnquiryResponse
 from fastapi import HTTPException, status
 
@@ -28,6 +28,20 @@ def create_enquiry(
 ) -> EnquiryResponse:
     try:
         return handle_enquiry(session, request, llm)
+    except LLMRateLimitError as exc:
+        headers = None
+        if exc.retry_after_seconds is not None:
+            headers = {"Retry-After": str(max(1, int(exc.retry_after_seconds)))}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers=headers,
+        ) from exc
+    except LLMProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
     except AuditLogError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

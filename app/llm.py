@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
+import json
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.config import Settings, get_settings
+
+# Cap sleeps so a single enquiry cannot hang past typical eval timeouts.
+_MAX_RETRY_SLEEP_SECONDS = 25.0
+_MAX_ATTEMPTS = 4
+
+
+class LLMProviderError(RuntimeError):
+    """Provider/transport failure that is not a business-rule outcome."""
+
+
+class LLMRateLimitError(LLMProviderError):
+    """Provider rate limit exhausted (after bounded retries)."""
+
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +49,47 @@ class LLMClient(Protocol):
         """One tool-capable chat completion turn."""
 
 
+def _retry_after_seconds(exc: BaseException) -> float | None:
+    """Best-effort extract of provider retry delay from headers or message text."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None) or {}
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+
+    text = str(exc)
+    match = re.search(
+        r"try again in\s+(\d+)m\s*([\d.]+)s",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return float(match.group(1)) * 60.0 + float(match.group(2))
+    match = re.search(r"try again in\s+([\d.]+)\s*s", text, flags=re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _parse_tool_calls(message: Any) -> list[LLMToolCall]:
+    tool_calls: list[LLMToolCall] = []
+    for tc in message.tool_calls or []:
+        raw_args = tc.function.arguments or "{}"
+        try:
+            parsed = json.loads(raw_args)
+        except json.JSONDecodeError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+        tool_calls.append(
+            LLMToolCall(id=tc.id, name=tc.function.name, arguments=parsed)
+        )
+    return tool_calls
+
+
 class OpenAICompatibleClient:
     """Thin wrapper around the official openai SDK (works with Groq/Ollama-compatible URLs)."""
 
@@ -41,7 +101,7 @@ class OpenAICompatibleClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> LLMResponse:
-        from openai import OpenAI
+        from openai import APIError, OpenAI, RateLimitError
 
         if not self.settings.llm_api_key and not self.settings.llm_base_url:
             raise RuntimeError(
@@ -62,23 +122,37 @@ class OpenAICompatibleClient:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
-        completion = client.chat.completions.create(**kwargs)
-        message = completion.choices[0].message
-        tool_calls: list[LLMToolCall] = []
-        for tc in message.tool_calls or []:
-            import json
-
-            raw_args = tc.function.arguments or "{}"
+        last_rate_limit: RateLimitError | None = None
+        for attempt in range(_MAX_ATTEMPTS):
             try:
-                parsed = json.loads(raw_args)
-            except json.JSONDecodeError:
-                parsed = {}
-            if not isinstance(parsed, dict):
-                parsed = {}
-            tool_calls.append(
-                LLMToolCall(id=tc.id, name=tc.function.name, arguments=parsed)
-            )
-        return LLMResponse(content=message.content, tool_calls=tool_calls)
+                completion = client.chat.completions.create(**kwargs)
+                message = completion.choices[0].message
+                return LLMResponse(
+                    content=message.content,
+                    tool_calls=_parse_tool_calls(message),
+                )
+            except RateLimitError as exc:
+                last_rate_limit = exc
+                wait = _retry_after_seconds(exc)
+                # Long TPD windows cannot be slept through inside one enquiry.
+                if wait is not None and wait > _MAX_RETRY_SLEEP_SECONDS:
+                    raise LLMRateLimitError(
+                        f"LLM rate limit exceeded; retry after about {wait:.0f}s. {exc}",
+                        retry_after_seconds=wait,
+                    ) from exc
+                if attempt >= _MAX_ATTEMPTS - 1:
+                    break
+                sleep_for = wait if wait is not None else float(2**attempt)
+                time.sleep(min(sleep_for, _MAX_RETRY_SLEEP_SECONDS))
+            except APIError as exc:
+                raise LLMProviderError(f"LLM provider error: {exc}") from exc
+
+        assert last_rate_limit is not None
+        wait = _retry_after_seconds(last_rate_limit)
+        raise LLMRateLimitError(
+            f"LLM rate limit exceeded after {_MAX_ATTEMPTS} attempts. {last_rate_limit}",
+            retry_after_seconds=wait,
+        )
 
 
 def get_llm_client() -> LLMClient:

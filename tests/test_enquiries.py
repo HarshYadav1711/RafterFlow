@@ -377,6 +377,40 @@ def test_daniel_quoted(api):
     assert data["lead"]["quote_low"] == 26450
     assert data["lead"]["quote_high"] == 34800
     assert "estimate_price" in _tools(resp)
+    assert data["lead"]["roof_material"] is None
+
+
+def test_replacement_target_material_does_not_set_roof_material(api):
+    """Target Colorbond wording must not populate CURRENT roof_material (stays null)."""
+    api.set_llm(
+        ScriptedLLM(
+            _model_emitted_quote_script(
+                {
+                    "name": "Morgan",
+                    "service_type": "roof_replacement",
+                    "size_m2": 150,
+                    "storeys": 2,
+                    "steep_pitch": True,
+                    "postcode": "4101",
+                }
+            )
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145002",
+            "I'd like to change it over to a new Colorbond roof. "
+            "Two storeys, steep pitch, about 150 square metres. West End 4101.",
+            "Morgan",
+        )
+    )
+    data = resp.json()
+    assert data["lead"]["roof_material"] is None
+    assert data["lead"]["service_type"] == "roof_replacement"
+    assert data["lead"]["status"] == "quoted"
+    # Replacement pricing must still work with null existing material.
+    assert data["lead"]["quote_low"] == 18050
+    assert data["lead"]["quote_high"] == 23700
 
 
 def test_sophie_out_of_scope(api):
@@ -402,6 +436,38 @@ def test_sophie_out_of_scope(api):
     assert data["lead"]["quote_low"] is None
     assert "estimate_price" not in _tools(resp)
     assert "don't" in data["reply"].lower() or "do not" in data["reply"].lower()
+
+
+def test_out_of_scope_skylight_request_declines_without_quote(api):
+    """General out-of-scope path (non-Appendix-F wording) must decline, not quote."""
+    api.set_llm(
+        ScriptedLLM(
+            [
+                round_with(
+                    tool("get_policy", {"topic": "services_not_offered"}),
+                    tool(
+                        "capture_lead_details",
+                        {"name": "Morgan", "suburb": "West End", "service_type": "other"},
+                    ),
+                    tool("mark_out_of_scope", {"requested_service": "skylights"}),
+                ),
+                DONE,
+            ]
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145055",
+            "Can you put skylights into my roof at West End?",
+            "Morgan",
+        )
+    )
+    data = resp.json()
+    assert data["lead"]["status"] == "out_of_scope"
+    assert data["lead"]["quote_low"] is None
+    assert "mark_out_of_scope" in _tools(resp)
+    assert "estimate_price" not in _tools(resp)
+    assert "skylight" in data["reply"].lower() or "don't" in data["reply"].lower()
 
 
 def test_tom_out_of_area(api):
@@ -438,6 +504,10 @@ def test_tom_out_of_area(api):
     assert "estimate_price" not in _tools(resp)
     assert "tile or metal" not in data["reply"].lower()
     assert "square metre" not in data["reply"].lower()
+    assert "inner brisbane" not in data["reply"].lower()
+    assert "4300" in data["reply"]
+    assert "can't provide a price" in data["reply"].lower() or "cannot provide a price" in data["reply"].lower()
+    assert "book an inspection" in data["reply"].lower()
 
 
 def test_aisha_multi_turn_same_lead(api):
@@ -537,10 +607,50 @@ def test_raj_warranty_honesty(api):
     )
     data = resp.json()
     reply = data["reply"].lower()
-    assert "guarantee" in reply or "estimates" in reply
+    topics = {
+        (t.get("args") or {}).get("topic")
+        for t in data["tool_calls"]
+        if t["tool"] == "get_policy"
+    }
+    assert "quote_policy" in topics
+    assert "warranty_policy" in topics
+    assert "estimates" in reply and "never guaranteed" in reply
+    assert "free inspection" in reply
+    assert "written quote" in reply and "48" in reply
     assert "7" in data["reply"] and "10" in data["reply"]
-    assert "25" not in data["reply"] or "can't offer a 25" in reply
+    assert "can't offer a 25" in reply
     assert "under $5" not in reply
+    assert data["lead"]["quote_low"] is None
+
+
+def test_price_guarantee_policy_reply_is_general(api):
+    """Quote-policy wording must not depend on a named customer or dollar threshold."""
+    api.set_llm(
+        ScriptedLLM(
+            [
+                round_with(
+                    tool("get_policy", {"topic": "quote_policy"}),
+                    tool("get_policy", {"topic": "warranty_policy"}),
+                ),
+                DONE,
+            ]
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145011",
+            "Can you lock in a maximum price for me? Also, what warranty do you give?",
+            "Casey",
+        )
+    )
+    data = resp.json()
+    reply = data["reply"].lower()
+    assert "estimates" in reply
+    assert "never guaranteed" in reply
+    assert "free inspection" in reply
+    assert "written quote" in reply
+    assert "48" in reply
+    assert "7" in data["reply"] and "10" in data["reply"]
     assert data["lead"]["quote_low"] is None
 
 
@@ -718,6 +828,146 @@ def test_successful_booking_via_enquiries(api):
     assert "2026-10-16T11:00" in data["reply"]
     booking = next(t for t in data["tool_calls"] if t["tool"] == "book_inspection")
     assert booking["result"]["outcome"] == "booked"
+
+
+def test_fresh_booking_requires_area_check_via_recovery(api):
+    """Direct book without area check must not mutate; recovery requires check_service_area."""
+    free_slot = "2026-10-16T09:00"
+    api.set_llm(
+        ScriptedLLM(
+            [
+                round_with(
+                    tool(
+                        "capture_lead_details",
+                        {
+                            "name": "Jamie",
+                            "service_type": "inspection_only",
+                            "postcode": "4064",
+                            "suburb": "Paddington",
+                        },
+                    )
+                ),
+                round_with(tool("book_inspection", {"slot_id": free_slot})),
+                DONE,  # early finish → recovery must demand area check
+                round_with(tool("check_service_area", {"postcode": "4064"})),
+                round_with(tool("book_inspection", {"slot_id": free_slot})),
+                DONE,
+            ]
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145020",
+            "Please book an inspection Friday 16 Oct at 9am. Paddington 4064.",
+            "Jamie",
+        )
+    )
+    data = resp.json()
+    tools = _tools(resp)
+    assert tools.count("book_inspection") == 2
+    assert "check_service_area" in tools
+    first_book = next(t for t in data["tool_calls"] if t["tool"] == "book_inspection")
+    assert first_book["result"].get("blocked") is True
+    assert first_book["result"].get("reason") == "service_area_unresolved"
+    assert first_book["result"].get("outcome") != "booked"
+    last_book = [t for t in data["tool_calls"] if t["tool"] == "book_inspection"][-1]
+    assert last_book["result"]["outcome"] == "booked"
+    assert data["lead"]["status"] == "inspection_booked"
+    assert data["lead"]["booked_slot_id"] == free_slot
+    nudge_seen = any(
+        "check_service_area" in (m.get("content") or "")
+        and "authoritative business decision" in (m.get("content") or "")
+        for prompt in api.llm.prompts
+        for m in prompt
+        if m.get("role") == "system"
+    )
+    assert nudge_seen is True
+
+
+def test_fresh_out_of_area_direct_booking_does_not_mutate(api):
+    free_slot = "2026-10-16T13:00"
+    api.set_llm(
+        ScriptedLLM(
+            [
+                round_with(
+                    tool(
+                        "capture_lead_details",
+                        {
+                            "name": "Riley",
+                            "service_type": "inspection_only",
+                            "postcode": "4300",
+                            "suburb": "Springfield",
+                        },
+                    )
+                ),
+                round_with(tool("book_inspection", {"slot_id": free_slot})),
+                DONE,
+                round_with(tool("check_service_area", {"postcode": "4300"})),
+                DONE,
+            ]
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145021",
+            "Book me Friday 16 Oct at 1pm please. Springfield 4300.",
+            "Riley",
+        )
+    )
+    data = resp.json()
+    assert data["lead"]["status"] == "out_of_area"
+    assert data["lead"]["booked_slot_id"] is None
+    books = [t for t in data["tool_calls"] if t["tool"] == "book_inspection"]
+    assert len(books) == 1
+    assert books[0]["result"].get("blocked") is True
+    assert books[0]["result"].get("outcome") != "booked"
+    assert "inner brisbane" not in data["reply"].lower()
+
+
+def test_stale_area_result_does_not_authorize_booking_after_postcode_change(api):
+    free_slot = "2026-10-17T08:00"
+    api.set_llm(
+        ScriptedLLM(
+            [
+                round_with(
+                    tool(
+                        "capture_lead_details",
+                        {
+                            "name": "Taylor",
+                            "service_type": "inspection_only",
+                            "postcode": "4064",
+                        },
+                    )
+                ),
+                round_with(tool("check_service_area", {"postcode": "4064"})),
+                round_with(
+                    tool(
+                        "capture_lead_details",
+                        {"postcode": "4300", "suburb": "Springfield"},
+                    )
+                ),
+                round_with(tool("book_inspection", {"slot_id": free_slot})),
+                DONE,
+                round_with(tool("check_service_area", {"postcode": "4300"})),
+                DONE,
+            ]
+        )
+    )
+    resp = api.post(
+        _payload(
+            "+61491145022",
+            "Book Saturday 17 Oct at 8am in Paddington 4064 — wait, actually Springfield 4300.",
+            "Taylor",
+        )
+    )
+    data = resp.json()
+    assert data["lead"]["postcode"] == "4300"
+    assert data["lead"]["status"] == "out_of_area"
+    assert data["lead"]["booked_slot_id"] is None
+    books = [t for t in data["tool_calls"] if t["tool"] == "book_inspection"]
+    assert len(books) == 1
+    assert books[0]["result"].get("blocked") is True
+    assert books[0]["result"].get("reason") == "service_area_unresolved"
 
 
 def test_enquiry_writes_one_audit_line(api):

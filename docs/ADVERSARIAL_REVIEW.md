@@ -95,3 +95,20 @@ Not a generic OWASP checklist.
 | Terminal status not durable across turns | Gate price/book on `lead.status` |
 | Stale quote after fact edits | Invalidate quotes on quote-sensitive capture changes |
 | Opaque pricing authority | Record lead `inputs` on `estimate_price` results |
+
+## Phase 6 live-eval defects
+
+### Empty awaiting_info reply crash
+
+- **Evidence:** HTTP 500 / `IndexError` in `_ask_for([])` when status was `awaiting_info` with no missing essentials.
+- **Fix:** Handle empty missing-field lists in reply composition; regression in `tests/test_replies.py`.
+
+### Tool-call null arguments rejected by provider
+
+- **Evidence:** Groq `tool_use_failed` when the model sent `null` for unstated capture fields.
+- **Fix:** Schema allows null; `capture_lead_details` treats null as omit.
+
+### Replacement rate lookup broken by incidental roof_material
+
+- **Evidence:** Daniel eval — `estimate_price` returned `missing_fields: ["service_rate"]` after model captured `roof_material=metal` on a Colorbond replacement.
+- **Fix:** Non-restoration services use the Appendix C null-material rate row.
